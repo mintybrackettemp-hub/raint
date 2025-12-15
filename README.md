@@ -1,6 +1,6 @@
-# Raint v1.0.0
+# Raint v1.0.1
 
-> A simple almost 1000-line program yet veristile CLI painting program made in rust
+> A simple 1000-line program yet veristile CLI painting program made in rust
 
 Raint aims to be a painting program in a terminal
 
