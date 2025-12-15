@@ -226,6 +226,40 @@ fn draw_brush_stroke(canvas: &mut Canvas, x: usize, y: usize, thickness: usize, 
     }
 }
 
+fn flood_fill(canvas: &mut Canvas, x: i32, y: i32, new_color: Color) {
+    let w = canvas.width as i32;
+    let h = canvas.height as i32;
+    if x < 0 || y < 0 || x >= w || y >= h {
+        return;
+    }
+
+    let tx = x as usize;
+    let ty = y as usize;
+    let target = canvas.get_pixel(tx, ty);
+    if target == new_color {
+        return;
+    }
+
+    let mut stack = Vec::new();
+    stack.push((x, y));
+
+    while let Some((cx, cy)) = stack.pop() {
+        if cx < 0 || cy < 0 || cx >= w || cy >= h {
+            continue;
+        }
+        let ux = cx as usize;
+        let uy = cy as usize;
+        if canvas.get_pixel(ux, uy) != target {
+            continue;
+        }
+        canvas.set_pixel(ux, uy, new_color);
+        stack.push((cx + 1, cy));
+        stack.push((cx - 1, cy));
+        stack.push((cx, cy + 1));
+        stack.push((cx, cy - 1));
+    }
+}
+
 fn prompt(msg: &str) -> String {
     disable_raw_mode().ok();
     print!("{}", msg);
@@ -302,7 +336,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     std::process::Command::new("clear").status()?;
     
     println!("\n╔════════════════════════════════════════╗");
-    println!("║      Raint - v.1.0.0                  ║");
+    println!("║      Raint - v.1.0.1                  ║");
     println!("╚════════════════════════════════════════╝\n");
     println!("Enter canvas size (width height) or single number for square.");
     println!("Range: 2-80 pixels\nExamples: '40' or '80 40'\n");
@@ -415,6 +449,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 Line::from("S - Draw a shape (circle or square)"),
                                 Line::from("L - Draw a line"),
                                 Line::from("P - Paint mode (draw with mouse drag)"),
+                                Line::from("F - Fill tool"),
                                 Line::from("E - Eraser mode (erase with mouse drag)"),
                                 Line::from("T - Set brush thickness (1-10)"),
                                 Line::from("Z - Undo last action"),
@@ -697,6 +732,62 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                     ..
                                 }) => {
                                     break 'line_loop;
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+                    execute!(io::stdout(), DisableMouseCapture)?;
+                    clear_input_buffer();
+                    terminal.clear()?;
+                }
+
+                Event::Key(KeyEvent {
+                    code: KeyCode::Char('f'),
+                    ..
+                })
+                | Event::Key(KeyEvent {
+                    code: KeyCode::Char('F'),
+                    ..
+                }) => {
+                    execute!(io::stdout(), EnableMouseCapture)?;
+                    'fill_loop: loop {
+                        terminal.draw(|f| {
+                            let chunks = Layout::default()
+                                .direction(Direction::Vertical)
+                                .margin(0)
+                                .constraints([Constraint::Min(1), Constraint::Length(2)])
+                                .split(f.size());
+
+                            let canvas_spans = canvas.render_to_spans();
+                            let canvas_widget = Paragraph::new(canvas_spans).block(Block::default().borders(Borders::NONE));
+                            f.render_widget(canvas_widget, chunks[0]);
+
+                            let info = Paragraph::new("[FILL] Click to fill area. Press ESC to cancel.")
+                                .block(Block::default().borders(Borders::TOP));
+                            f.render_widget(info, chunks[1]);
+                        })?;
+
+                        if event::poll(Duration::from_millis(50))? {
+                            match event::read()? {
+                                Event::Mouse(mouse_event) => {
+                                    use crossterm::event::MouseEventKind;
+
+                                    if matches!(mouse_event.kind, MouseEventKind::Down(_)) {
+                                        let col = (mouse_event.column / 2) as i32;
+                                        let row = mouse_event.row as i32;
+                                        flood_fill(&mut canvas, col, row, current_color);
+                                        canvas_history.truncate(history_index + 1);
+                                        canvas_history.push(canvas.clone_for_preview());
+                                        history_index = canvas_history.len() - 1;
+                                        break 'fill_loop;
+                                    }
+                                }
+                                Event::Key(KeyEvent {
+                                    code: KeyCode::Esc,
+                                    ..
+                                }) => {
+                                    break 'fill_loop;
                                 }
                                 _ => {}
                             }
